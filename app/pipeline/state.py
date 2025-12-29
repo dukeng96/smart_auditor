@@ -1,0 +1,18 @@
+from __future__ import annotations
+
+from typing import Dict, List, Optional, TypedDict
+
+from app.models.schemas import DraftChunk, Finding, ProcessingPhase, ReferenceDoc
+
+
+class AuditState(TypedDict, total=False):
+    request_id: str
+    file_path: str
+    kb_folder_id: str
+    processing_phase: ProcessingPhase
+    draft_chunks: List[DraftChunk]
+    knowledge_references: Dict[str, ReferenceDoc]
+    findings: List[Finding]
+    total_chunks: int
+    processed_chunks: int
+    processing_time_ms: Optional[int]
