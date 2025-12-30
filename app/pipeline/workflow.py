@@ -201,11 +201,14 @@ class AuditWorkflow:
                 )
             ref_ids_for_chunk: List[str] = []
             for idx, item in enumerate(results):
-                raw_id = str(item.get("id") or f"{item.get('file_name', 'ref')}_{item.get('page_id', idx)}_{idx}")
-                normalized_id = self._normalize_ref_id(raw_id)
+                source_id = item.get("id")
+                if source_id is None or str(source_id).strip() == "":
+                    source_id = f"p{item.get('page_id', idx)}-{idx}"
+                raw_id = f"ref-{source_id}"
+                normalized_id = self._normalize_ref_id(str(raw_id))
                 final_ref_id = normalized_id
                 if final_ref_id in knowledge_references:
-                    final_ref_id = self._normalize_ref_id(f"{normalized_id}_{draft_chunk.id}_{idx}")
+                    final_ref_id = self._normalize_ref_id(f"{normalized_id}-{draft_chunk.id}-{idx}")
                 ref_ids_for_chunk.append(final_ref_id)
                 knowledge_references.setdefault(
                     final_ref_id,

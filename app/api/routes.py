@@ -54,7 +54,10 @@ async def _progress_stream(workflow: AuditWorkflow, task_id: str) -> AsyncGenera
         phase = state.get("processing_phase")
         phase_value = phase.value if hasattr(phase, "value") else phase
 
-        if phase == ProcessingPhase.OCR:
+        if phase == ProcessingPhase.INIT:
+            progress = 0
+            message = "Bắt đầu phân tích"
+        elif phase == ProcessingPhase.OCR:
             progress = 5
             message = "Đang trích xuất nội dung văn bản..."
         elif phase == ProcessingPhase.SEARCH:
