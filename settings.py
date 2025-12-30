@@ -18,6 +18,8 @@ class KBSettings(BaseModel):
     base_url: str
     bot_id: str
     top_k_retrieval: int = Field(default=5)
+    top_n_retrieval: int = Field(default=100)
+    top_n_reranking: int = Field(default=2)
 
 
 class LLMSettings(BaseModel):

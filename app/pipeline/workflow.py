@@ -50,6 +50,7 @@ class AuditWorkflow:
         self.checkpointer = MemorySaver()
         self.kb_client = KnowledgeBaseClient(settings)
         self.llm_client = LLMClient(settings)
+        self.folder_cache: Dict[str, str] = {}
         self.state_store: Dict[str, AuditState] = {}
         self.workflow = self._build_workflow()
 
@@ -77,6 +78,8 @@ class AuditWorkflow:
             "processing_phase": ProcessingPhase.INIT,
             "draft_chunks": [],
             "knowledge_references": {},
+            "chunk_references": {},
+            "chunk_primary_sources": {},
             "findings": [],
             "total_chunks": 0,
             "processed_chunks": 0,
@@ -90,6 +93,23 @@ class AuditWorkflow:
         if request_id:
             self.state_store[request_id] = state
         return state
+
+    async def _resolve_kb_folder_path(self, kb_folder_id: str) -> str | None:
+        if not kb_folder_id:
+            return None
+        if kb_folder_id in self.folder_cache:
+            return self.folder_cache[kb_folder_id]
+        try:
+            folders = await self.kb_client.list_folders()
+        except Exception:
+            return None
+        for item in folders.get("folders_in_details", []):
+            if item.get("id") == kb_folder_id or item.get("path") == kb_folder_id:
+                folder_path = item.get("path")
+                if folder_path:
+                    self.folder_cache[kb_folder_id] = folder_path
+                return folder_path
+        return None
 
     async def _ingest_and_chunk(self, state: AuditState) -> AuditState:
         updated_state = dict(state)
@@ -123,25 +143,48 @@ class AuditWorkflow:
         updated_state = dict(state)
         updated_state["processing_phase"] = ProcessingPhase.SEARCH
         knowledge_references: Dict[str, ReferenceDoc] = dict(updated_state.get("knowledge_references", {}))
+        chunk_references: Dict[str, List[str]] = dict(updated_state.get("chunk_references", {}))
+        chunk_primary_sources: Dict[str, str] = dict(updated_state.get("chunk_primary_sources", {}))
+
+        folder_path = await self._resolve_kb_folder_path(updated_state.get("kb_folder_id", ""))
+        top_n_retrieval = getattr(self.settings.kb_api, "top_n_retrieval", self.settings.kb_api.top_k_retrieval)
+        top_n_reranking = getattr(self.settings.kb_api, "top_n_reranking", self.settings.kb_api.top_k_retrieval)
 
         for draft_chunk in updated_state.get("draft_chunks", []):
             await asyncio.sleep(self.settings.processing.search_delay)
             try:
-                results = await self.kb_client.search(draft_chunk.content, self.settings.kb_api.top_k_retrieval)
+                results = await self.kb_client.search(
+                    query=draft_chunk.content,
+                    kb_folder_path=folder_path,
+                    top_n_retrieval=top_n_retrieval,
+                    top_n_reranking=top_n_reranking,
+                )
             except Exception:
                 results = []
+            ref_ids_for_chunk: List[str] = []
             for idx, item in enumerate(results):
                 ref_id = item.get("id") or f"ref_{draft_chunk.id}_{idx}"
-                knowledge_references[ref_id] = ReferenceDoc(
-                    ref_id=str(ref_id),
-                    doc_code=item.get("filed", "N/A"),
-                    file_name=item.get("file_name", "unknown.pdf"),
-                    title=item.get("passage_title", ""),
-                    content=md(item.get("passage_content", "")),
-                    page_number=item.get("page_id", 1),
+                unique_ref_id = f"{draft_chunk.id}_ref_{ref_id}"
+                ref_ids_for_chunk.append(unique_ref_id)
+                knowledge_references.setdefault(
+                    unique_ref_id,
+                    ReferenceDoc(
+                        ref_id=str(unique_ref_id),
+                        doc_code=item.get("filed", "N/A"),
+                        file_name=item.get("file_name", "unknown.pdf"),
+                        title=item.get("passage_title", ""),
+                        content=md(item.get("passage_content", "")),
+                        page_number=item.get("page_id", 1),
+                    ),
                 )
+            if results:
+                primary_file = results[0].get("file_name", "unknown.pdf")
+                chunk_primary_sources[draft_chunk.id] = primary_file
+            chunk_references[draft_chunk.id] = ref_ids_for_chunk[:top_n_reranking]
 
         updated_state["knowledge_references"] = knowledge_references
+        updated_state["chunk_references"] = chunk_references
+        updated_state["chunk_primary_sources"] = chunk_primary_sources
         updated_state["processing_phase"] = ProcessingPhase.COMPARE
         return self._persist_state(updated_state)
 
@@ -149,16 +192,23 @@ class AuditWorkflow:
         updated_state = dict(state)
         updated_state["processing_phase"] = ProcessingPhase.COMPARE
         findings: List[Finding] = list(updated_state.get("findings", []))
-        references = list(updated_state.get("knowledge_references", {}).values())
+        references_map = updated_state.get("knowledge_references", {})
+        chunk_references = updated_state.get("chunk_references", {})
 
         start_time = time.time()
         for draft_chunk in updated_state.get("draft_chunks", []):
+            reference_ids = chunk_references.get(draft_chunk.id, [])
+            references_for_chunk = [references_map[ref_id] for ref_id in reference_ids if ref_id in references_map]
             reference_list_formatted = "\n".join(
                 [
                     f"- ID: {ref.ref_id}\n  Tiêu đề: {ref.title}\n  Nội dung: {ref.content}"
-                    for ref in references
+                    for ref in references_for_chunk
                 ]
             )
+            updated_state["current_compare_target"] = updated_state.get("chunk_primary_sources", {}).get(
+                draft_chunk.id, "Đang đối chiếu các tham chiếu"
+            )
+            self._persist_state(updated_state)
             try:
                 llm_results = await self.llm_client.compare(
                     draft_text=draft_chunk.content,
@@ -217,6 +267,7 @@ class AuditWorkflow:
             AnalysisType.CONFLICT.value.lower(): len([f for f in findings if f.type == AnalysisType.CONFLICT]),
             AnalysisType.UPDATE.value.lower(): len([f for f in findings if f.type == AnalysisType.UPDATE]),
             AnalysisType.DUPLICATE.value.lower(): len([f for f in findings if f.type == AnalysisType.DUPLICATE]),
+            AnalysisType.IRRELEVANT.value.lower(): len([f for f in findings if f.type == AnalysisType.IRRELEVANT]),
         }
         risk_level = "Thấp"
         if stats.get("conflict", 0) >= 2:
@@ -224,19 +275,28 @@ class AuditWorkflow:
         elif stats.get("conflict", 0) == 1 or stats.get("update", 0) > 2:
             risk_level = "Trung bình"
 
+        risk_reason = "Không phát hiện rủi ro đáng kể."
+        for priority_type in [AnalysisType.CONFLICT, AnalysisType.UPDATE, AnalysisType.DUPLICATE]:
+            finding = next((f for f in findings if f.type == priority_type and f.summary), None)
+            if finding:
+                risk_reason = finding.summary
+                break
+
         linkages: List[DocLinkage] = []
-        ref_by_file: Dict[str, List[str]] = {}
+        ref_by_file: Dict[str, Dict[str, List[str] | str]] = {}
         for finding in findings:
             if not finding.related_ref_id:
                 continue
             ref_doc = state.get("knowledge_references", {}).get(finding.related_ref_id)
             if not ref_doc:
                 continue
-            ref_by_file.setdefault(ref_doc.file_name, []).append(finding.draft_chunk_id)
-        for file_name, chunk_ids in ref_by_file.items():
+            ref_by_file.setdefault(ref_doc.file_name, {"doc_code": ref_doc.doc_code, "chunks": []})
+            ref_by_file[ref_doc.file_name]["chunks"].append(finding.draft_chunk_id)
+        for file_name, payload in ref_by_file.items():
+            chunk_ids = payload.get("chunks", []) if isinstance(payload, dict) else []
             linkages.append(
                 DocLinkage(
-                    ref_doc_code="N/A",
+                    ref_doc_code=payload.get("doc_code", "") if isinstance(payload, dict) else "",
                     file_name=file_name,
                     linked_count=len(chunk_ids),
                     related_chunk_ids=chunk_ids,
@@ -245,9 +305,15 @@ class AuditWorkflow:
 
         overview = OverviewReport(
             risk_level=risk_level,
-            risk_reason="Tự động tổng hợp từ kết quả LLM",
+            risk_reason=risk_reason,
             stats=stats,
-            exec_summary="Kết quả phân tích tự động từ SmartDoc Auditor",
+            exec_summary=(
+                "AI đã đối chiếu "
+                f"{len(state.get('draft_chunks', []))} đoạn trong dự thảo với "
+                f"{len(state.get('knowledge_references', {}))} văn bản tham chiếu. "
+                f"Phát hiện {stats.get('conflict', 0)} mâu thuẫn, {stats.get('update', 0)} cập nhật, "
+                f"{stats.get('duplicate', 0)} trùng khớp và {stats.get('irrelevant', 0)} nhiễu"
+            ),
             doc_linkages=linkages,
         )
 

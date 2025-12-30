@@ -19,15 +19,23 @@ class KnowledgeBaseClient:
             response.raise_for_status()
             return response.json()
 
-    async def search(self, query: str, top_n_reranking: int) -> List[Dict[str, Any]]:
+    async def search(
+        self,
+        query: str,
+        kb_folder_path: str | None,
+        top_n_retrieval: int,
+        top_n_reranking: int,
+    ) -> List[Dict[str, Any]]:
         payload = {
             "bot_id": self.settings.kb_api.bot_id,
             "query": query,
-            "top_n_retrieval": str(self.settings.kb_api.top_k_retrieval),
+            "top_n_retrieval": str(top_n_retrieval),
             "top_n_reranking": str(top_n_reranking),
             "rank": "0",
             "enable_retrieval_detail_return": True,
         }
+        if kb_folder_path:
+            payload["selected_paths"] = [f".{kb_folder_path}"]
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(f"{self.base_url}/search", json=payload)
             response.raise_for_status()

@@ -46,7 +46,7 @@ class Finding(BaseModel):
 
 
 class DocLinkage(BaseModel):
-    ref_doc_code: str
+    ref_doc_code: str = Field(default="")
     file_name: str
     linked_count: int
     related_chunk_ids: List[str]

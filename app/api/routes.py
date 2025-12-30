@@ -54,19 +54,36 @@ async def _progress_stream(workflow: AuditWorkflow, task_id: str) -> AsyncGenera
             break
         total = state.get("total_chunks", 0) or 1
         processed = state.get("processed_chunks", 0)
-        percent = int((processed / total) * 100) if total else 0
+        phase = state.get("processing_phase")
+        phase_value = phase.value if hasattr(phase, "value") else phase
+
+        if phase == ProcessingPhase.OCR:
+            progress = 10
+            message = "Đang trích xuất nội dung văn bản..."
+        elif phase == ProcessingPhase.SEARCH:
+            progress = 20
+            message = "Đang tìm kiếm văn bản liên quan..."
+        elif phase == ProcessingPhase.COMPARE:
+            progress = 30 + int((processed / total) * 60) if total else 30
+            target_file = state.get("current_compare_target") or "các tài liệu tham chiếu"
+            message = f"Đang đối chiếu với: {target_file}"
+        elif phase == ProcessingPhase.DONE:
+            progress = 100
+            message = "Hoàn tất!"
+        else:
+            progress = int((processed / total) * 100) if total else 0
+            message = f"Đã xử lý {processed}/{total} khối"
+
         payload = {
-            "phase": (state.get("processing_phase") or "").value
-            if hasattr(state.get("processing_phase"), "value")
-            else state.get("processing_phase"),
-            "progress": percent,
-            "message": f"Đã xử lý {processed}/{total} khối",
+            "phase": phase_value,
+            "progress": progress,
+            "message": message,
         }
-        if state.get("processing_phase") == ProcessingPhase.DONE:
+        if phase == ProcessingPhase.DONE:
             payload["result_id"] = task_id
         yield b"event: message\n"
         yield f"data: {payload}\n\n".encode("utf-8")
-        if state.get("processing_phase") == ProcessingPhase.DONE:
+        if phase == ProcessingPhase.DONE:
             break
         await asyncio.sleep(1)
 

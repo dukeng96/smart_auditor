@@ -12,6 +12,9 @@ class AuditState(TypedDict, total=False):
     processing_phase: ProcessingPhase
     draft_chunks: List[DraftChunk]
     knowledge_references: Dict[str, ReferenceDoc]
+    chunk_references: Dict[str, List[str]]
+    chunk_primary_sources: Dict[str, str]
+    current_compare_target: str
     findings: List[Finding]
     total_chunks: int
     processed_chunks: int
