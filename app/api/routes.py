@@ -46,27 +46,30 @@ async def _progress_stream(workflow: AuditWorkflow, task_id: str) -> AsyncGenera
             yield b"event: message\n"
             yield b'data: {"phase": "ERROR", "progress": 0, "message": "Task not found"}\n\n'
             break
-        total = state.get("total_chunks", 0) or 1
-        processed = state.get("processed_chunks", 0)
+        total_chunks = state.get("total_chunks", 0)
+        search_processed = state.get("search_processed", 0)
+        compare_processed = state.get("processed_chunks", 0)
+        total_operations = max((total_chunks or 0) * 2, 1)
+        completed_operations = min(search_processed + compare_processed, total_operations)
         phase = state.get("processing_phase")
         phase_value = phase.value if hasattr(phase, "value") else phase
 
         if phase == ProcessingPhase.OCR:
-            progress = 10
+            progress = 5
             message = "Đang trích xuất nội dung văn bản..."
         elif phase == ProcessingPhase.SEARCH:
-            progress = 20
+            progress = 10 + int((completed_operations / total_operations) * 89)
             message = "Đang tìm kiếm văn bản liên quan..."
         elif phase == ProcessingPhase.COMPARE:
-            progress = 30 + int((processed / total) * 60) if total else 30
+            progress = 10 + int((completed_operations / total_operations) * 89)
             target_file = state.get("current_compare_target") or "các tài liệu tham chiếu"
             message = f"Đang đối chiếu với: {target_file}"
         elif phase == ProcessingPhase.DONE:
             progress = 100
             message = "Hoàn tất!"
         else:
-            progress = int((processed / total) * 100) if total else 0
-            message = f"Đã xử lý {processed}/{total} khối"
+            progress = int((completed_operations / total_operations) * 100)
+            message = f"Đã xử lý {compare_processed}/{total_chunks} khối"
 
         payload = {
             "phase": phase_value,
@@ -93,13 +96,16 @@ async def get_progress(request_id: str, workflow: AuditWorkflow = Depends(get_wo
     state = workflow.get_state(request_id)
     if not state:
         raise HTTPException(status_code=404, detail="Request not found")
-    total = state.get("total_chunks", 0)
-    processed = state.get("processed_chunks", 0)
-    percentage = int((processed / total) * 100) if total else 0
+    total_chunks = state.get("total_chunks", 0)
+    search_processed = state.get("search_processed", 0)
+    compare_processed = state.get("processed_chunks", 0)
+    total_operations = max((total_chunks or 0) * 2, 1)
+    completed_operations = min(search_processed + compare_processed, total_operations)
+    percentage = int((completed_operations / total_operations) * 100)
     return ProgressResponse(
         phase=state.get("processing_phase"),
-        total_items=total,
-        reviewed_items=processed,
+        total_items=total_chunks,
+        reviewed_items=compare_processed,
         percentage=percentage,
     )
 

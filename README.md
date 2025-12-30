@@ -91,14 +91,17 @@ Logging controls live under the `logging` section (level + `log_external_io` to 
     "overview": {
       "risk_level": "Cao",
       "risk_reason": "Phát hiện 2 mâu thuẫn nghiêm trọng về chính sách tài chính.",
-      "stats": {"conflict": 2, "update": 2, "match": 2},
+      "stats": {"conflict": 2, "update": 2, "duplicate": 2, "irrelevant": 1},
       "exec_summary": "AI đã đối chiếu 7 đoạn trong dự thảo với 5 văn bản tham chiếu. Phát hiện 2 mâu thuẫn, 2 cập nhật, 2 trùng khớp và 1 nhiễu",
       "doc_linkages": [
         {
-          "ref_doc_code": "QĐ-KD-2024",
+          "file_id": "QĐ-KD-2024",
           "file_name": "Quy_dinh_cu_v1.pdf",
-          "linked_count": 2,
-          "related_chunk_ids": ["draft_chunk_01", "draft_chunk_02"]
+          "links": [
+            {"finding_id": "f_001", "type": "UPDATE", "draft_chunk_id": "draft_chunk_01", "risk_score": 0.85},
+            {"finding_id": "f_002", "type": "DUPLICATE", "draft_chunk_id": "draft_chunk_02", "risk_score": 0.0}
+          ],
+          "impacted_draft_chunks": ["draft_chunk_01", "draft_chunk_02"]
         }
       ]
     },
@@ -110,6 +113,7 @@ Logging controls live under the `logging` section (level + `log_external_io` to 
     },
     "findings": [
       {
+        "finding_id": "f_001",
         "draft_chunk_id": "draft_chunk_01",
         "type": "UPDATE",
         "related_ref_id": "ref_db_1023",

@@ -38,6 +38,7 @@ class ReferenceDoc(BaseModel):
 
 
 class Finding(BaseModel):
+    finding_id: str
     draft_chunk_id: str
     type: AnalysisType
     related_ref_id: Optional[str] = None
@@ -45,11 +46,18 @@ class Finding(BaseModel):
     risk_score: float
 
 
+class LinkageItem(BaseModel):
+    finding_id: str
+    type: AnalysisType
+    draft_chunk_id: str
+    risk_score: float
+
+
 class DocLinkage(BaseModel):
-    ref_doc_code: str = Field(default="")
+    file_id: str
     file_name: str
-    linked_count: int
-    related_chunk_ids: List[str]
+    links: List[LinkageItem]
+    impacted_draft_chunks: List[str]
 
 
 class OverviewReport(BaseModel):
