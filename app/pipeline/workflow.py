@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import unicodedata
 import time
 from pathlib import Path
 from typing import Dict, List
@@ -106,8 +107,11 @@ class AuditWorkflow:
         return state
 
     def _normalize_ref_id(self, candidate: str) -> str:
-        sanitized = re.sub(r"[^a-zA-Z0-9_-]+", "_", candidate).strip("_")
-        return sanitized or f"ref_{uuid4().hex[:8]}"
+        normalized = unicodedata.normalize("NFKD", candidate)
+        ascii_text = normalized.encode("ascii", "ignore").decode().lower()
+        sanitized = re.sub(r"[^a-z0-9]+", "-", ascii_text).strip("-")
+        compact = re.sub(r"-+", "-", sanitized)
+        return compact or f"ref-{uuid4().hex[:8]}"
 
     async def _resolve_kb_folder_path(self, kb_folder_id: str) -> str | None:
         if not kb_folder_id:
@@ -328,11 +332,11 @@ class AuditWorkflow:
         if not state:
             return None
         findings: List[Finding] = state.get("findings", [])
+        filtered_findings = [f for f in findings if f.type != AnalysisType.IRRELEVANT]
         stats: Dict[str, int] = {
-            AnalysisType.CONFLICT.value.lower(): len([f for f in findings if f.type == AnalysisType.CONFLICT]),
-            AnalysisType.UPDATE.value.lower(): len([f for f in findings if f.type == AnalysisType.UPDATE]),
-            AnalysisType.DUPLICATE.value.lower(): len([f for f in findings if f.type == AnalysisType.DUPLICATE]),
-            AnalysisType.IRRELEVANT.value.lower(): len([f for f in findings if f.type == AnalysisType.IRRELEVANT]),
+            AnalysisType.CONFLICT.value.lower(): len([f for f in filtered_findings if f.type == AnalysisType.CONFLICT]),
+            AnalysisType.UPDATE.value.lower(): len([f for f in filtered_findings if f.type == AnalysisType.UPDATE]),
+            AnalysisType.DUPLICATE.value.lower(): len([f for f in filtered_findings if f.type == AnalysisType.DUPLICATE]),
         }
         risk_level = "Thấp"
         if stats.get("conflict", 0) >= 2:
@@ -341,7 +345,7 @@ class AuditWorkflow:
             risk_level = "Trung bình"
 
         risk_reason = "Không phát hiện rủi ro đáng kể."
-        sorted_findings = sorted(findings, key=lambda f: f.risk_score, reverse=True)
+        sorted_findings = sorted(filtered_findings, key=lambda f: f.risk_score, reverse=True)
         for finding in sorted_findings:
             if finding.summary:
                 risk_reason = finding.summary
@@ -349,7 +353,7 @@ class AuditWorkflow:
 
         linkages: List[DocLinkage] = []
         ref_by_file: Dict[str, Dict[str, object]] = {}
-        for finding in findings:
+        for finding in filtered_findings:
             if not finding.related_ref_id:
                 continue
             ref_doc = state.get("knowledge_references", {}).get(finding.related_ref_id)
@@ -398,7 +402,7 @@ class AuditWorkflow:
                 f"{len(state.get('draft_chunks', []))} đoạn trong dự thảo với "
                 f"{len(state.get('knowledge_references', {}))} văn bản tham chiếu. "
                 f"Phát hiện {stats.get('conflict', 0)} mâu thuẫn, {stats.get('update', 0)} cập nhật, "
-                f"{stats.get('duplicate', 0)} trùng khớp và {stats.get('irrelevant', 0)} nhiễu"
+                f"{stats.get('duplicate', 0)} trùng khớp"
             ),
             doc_linkages=linkages,
         )
@@ -410,5 +414,5 @@ class AuditWorkflow:
             overview=overview,
             draft_content=state.get("draft_chunks", []),
             knowledge_references=state.get("knowledge_references", {}),
-            findings=findings,
+            findings=filtered_findings,
         )

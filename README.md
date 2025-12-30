@@ -91,8 +91,8 @@ Logging controls live under the `logging` section (level + `log_external_io` to 
     "overview": {
       "risk_level": "Cao",
       "risk_reason": "Phát hiện 2 mâu thuẫn nghiêm trọng về chính sách tài chính.",
-      "stats": {"conflict": 2, "update": 2, "duplicate": 2, "irrelevant": 1},
-      "exec_summary": "AI đã đối chiếu 7 đoạn trong dự thảo với 5 văn bản tham chiếu. Phát hiện 2 mâu thuẫn, 2 cập nhật, 2 trùng khớp và 1 nhiễu",
+      "stats": {"conflict": 2, "update": 2, "duplicate": 2},
+      "exec_summary": "AI đã đối chiếu 7 đoạn trong dự thảo với 5 văn bản tham chiếu. Phát hiện 2 mâu thuẫn, 2 cập nhật, 2 trùng khớp",
       "doc_linkages": [
         {
           "file_id": "QĐ-KD-2024",
