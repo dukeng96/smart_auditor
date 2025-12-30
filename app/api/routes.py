@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Request
 from fastapi.responses import StreamingResponse
 
 from app.models.schemas import (
@@ -15,18 +15,12 @@ from app.models.schemas import (
     UpdateKnowledgeRequest,
 )
 from app.pipeline.workflow import AuditWorkflow
-from settings import get_settings
 
 router = APIRouter(prefix="/api/v1/auditor", tags=["auditor"])
 
 
-def get_workflow() -> AuditWorkflow:
-    return router.state.workflow  # type: ignore[attr-defined]
-
-
-@router.on_event("startup")
-async def _init_workflow():
-    router.state.workflow = AuditWorkflow(get_settings())  # type: ignore[attr-defined]
+def get_workflow(request: Request) -> AuditWorkflow:
+    return request.app.state.workflow
 
 
 @router.post("/upload")
