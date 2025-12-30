@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from pathlib import Path
 from typing import Dict, List
@@ -21,6 +22,7 @@ from app.models.schemas import (
     DocLinkage,
     DraftChunk,
     Finding,
+    LinkageItem,
     OverviewReport,
     ProcessingPhase,
     ReferenceDoc,
@@ -84,6 +86,7 @@ class AuditWorkflow:
             "chunk_references": {},
             "chunk_primary_sources": {},
             "findings": [],
+            "search_processed": 0,
             "total_chunks": 0,
             "processed_chunks": 0,
         }
@@ -101,6 +104,10 @@ class AuditWorkflow:
         if request_id:
             self.state_store[request_id] = state
         return state
+
+    def _normalize_ref_id(self, candidate: str) -> str:
+        sanitized = re.sub(r"[^a-zA-Z0-9_-]+", "_", candidate).strip("_")
+        return sanitized or f"ref_{uuid4().hex[:8]}"
 
     async def _resolve_kb_folder_path(self, kb_folder_id: str) -> str | None:
         if not kb_folder_id:
@@ -144,6 +151,7 @@ class AuditWorkflow:
 
         updated_state["draft_chunks"] = draft_chunks
         updated_state["total_chunks"] = len(draft_chunks)
+        updated_state["search_processed"] = 0
         updated_state["processing_phase"] = ProcessingPhase.SEARCH
         self.logger.info(
             "Ingestion completed",
@@ -189,14 +197,17 @@ class AuditWorkflow:
                 )
             ref_ids_for_chunk: List[str] = []
             for idx, item in enumerate(results):
-                ref_id = item.get("id") or f"ref_{draft_chunk.id}_{idx}"
-                unique_ref_id = f"{draft_chunk.id}_ref_{ref_id}"
-                ref_ids_for_chunk.append(unique_ref_id)
+                raw_id = str(item.get("id") or f"{item.get('file_name', 'ref')}_{item.get('page_id', idx)}_{idx}")
+                normalized_id = self._normalize_ref_id(raw_id)
+                final_ref_id = normalized_id
+                if final_ref_id in knowledge_references:
+                    final_ref_id = self._normalize_ref_id(f"{normalized_id}_{draft_chunk.id}_{idx}")
+                ref_ids_for_chunk.append(final_ref_id)
                 knowledge_references.setdefault(
-                    unique_ref_id,
+                    final_ref_id,
                     ReferenceDoc(
-                        ref_id=str(unique_ref_id),
-                        doc_code=item.get("filed", "N/A"),
+                        ref_id=str(final_ref_id),
+                        doc_code=item.get("filed", ""),
                         file_name=item.get("file_name", "unknown.pdf"),
                         title=item.get("passage_title", ""),
                         content=md(item.get("passage_content", "")),
@@ -207,6 +218,8 @@ class AuditWorkflow:
                 primary_file = results[0].get("file_name", "unknown.pdf")
                 chunk_primary_sources[draft_chunk.id] = primary_file
             chunk_references[draft_chunk.id] = ref_ids_for_chunk[:top_n_reranking]
+            updated_state["search_processed"] = updated_state.get("search_processed", 0) + 1
+            self._persist_state(updated_state)
 
         self.logger.info(
             "Retrieval completed",
@@ -263,6 +276,7 @@ class AuditWorkflow:
             if not llm_results:
                 findings.append(
                     Finding(
+                        finding_id=f"find_{uuid4().hex}",
                         draft_chunk_id=draft_chunk.id,
                         type=AnalysisType.IRRELEVANT,
                         related_ref_id=None,
@@ -277,6 +291,7 @@ class AuditWorkflow:
                         result_type = AnalysisType(result_type)
                     findings.append(
                         Finding(
+                            finding_id=f"find_{uuid4().hex}",
                             draft_chunk_id=draft_chunk.id,
                             type=result_type,
                             related_ref_id=result.get("ref_id"),
@@ -326,30 +341,51 @@ class AuditWorkflow:
             risk_level = "Trung bình"
 
         risk_reason = "Không phát hiện rủi ro đáng kể."
-        for priority_type in [AnalysisType.CONFLICT, AnalysisType.UPDATE, AnalysisType.DUPLICATE]:
-            finding = next((f for f in findings if f.type == priority_type and f.summary), None)
-            if finding:
+        sorted_findings = sorted(findings, key=lambda f: f.risk_score, reverse=True)
+        for finding in sorted_findings:
+            if finding.summary:
                 risk_reason = finding.summary
                 break
 
         linkages: List[DocLinkage] = []
-        ref_by_file: Dict[str, Dict[str, List[str] | str]] = {}
+        ref_by_file: Dict[str, Dict[str, object]] = {}
         for finding in findings:
             if not finding.related_ref_id:
                 continue
             ref_doc = state.get("knowledge_references", {}).get(finding.related_ref_id)
             if not ref_doc:
                 continue
-            ref_by_file.setdefault(ref_doc.file_name, {"doc_code": ref_doc.doc_code, "chunks": []})
-            ref_by_file[ref_doc.file_name]["chunks"].append(finding.draft_chunk_id)
-        for file_name, payload in ref_by_file.items():
-            chunk_ids = payload.get("chunks", []) if isinstance(payload, dict) else []
+            doc_code_value = ref_doc.doc_code if ref_doc.doc_code and ref_doc.doc_code != "N/A" else ""
+            file_id = doc_code_value or self._normalize_ref_id(ref_doc.file_name)
+            bucket = ref_by_file.setdefault(
+                file_id,
+                {
+                    "file_name": ref_doc.file_name,
+                    "links": [],
+                    "impacted": set(),
+                },
+            )
+            if isinstance(bucket.get("impacted"), set):
+                bucket["impacted"].add(finding.draft_chunk_id)
+            bucket_links = bucket.get("links") if isinstance(bucket.get("links"), list) else []
+            bucket_links.append(
+                LinkageItem(
+                    finding_id=finding.finding_id,
+                    type=finding.type,
+                    draft_chunk_id=finding.draft_chunk_id,
+                    risk_score=finding.risk_score,
+                )
+            )
+            bucket["links"] = bucket_links
+        for file_id, payload in ref_by_file.items():
+            impacted = sorted(payload.get("impacted", [])) if isinstance(payload.get("impacted"), set) else []
+            links = payload.get("links", []) if isinstance(payload.get("links"), list) else []
             linkages.append(
                 DocLinkage(
-                    ref_doc_code=payload.get("doc_code", "") if isinstance(payload, dict) else "",
-                    file_name=file_name,
-                    linked_count=len(chunk_ids),
-                    related_chunk_ids=chunk_ids,
+                    file_id=file_id,
+                    file_name=payload.get("file_name", ""),
+                    links=links,
+                    impacted_draft_chunks=list(dict.fromkeys(impacted)),
                 )
             )
 
