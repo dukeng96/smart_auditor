@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from pathlib import Path
 from typing import Dict, List
@@ -53,6 +54,7 @@ class AuditWorkflow:
         self.folder_cache: Dict[str, str] = {}
         self.state_store: Dict[str, AuditState] = {}
         self.workflow = self._build_workflow()
+        self.logger = logging.getLogger(__name__)
 
     def _build_workflow(self):
         graph = StateGraph(AuditState)
@@ -71,6 +73,7 @@ class AuditWorkflow:
 
     async def start(self, file_path: Path, kb_folder_id: str) -> str:
         request_id = f"req_{uuid4().hex}"
+        self.logger.info("Starting audit workflow", extra={"request_id": request_id, "kb_folder_id": kb_folder_id})
         initial_state: AuditState = {
             "request_id": request_id,
             "file_path": str(file_path),
@@ -142,6 +145,10 @@ class AuditWorkflow:
         updated_state["draft_chunks"] = draft_chunks
         updated_state["total_chunks"] = len(draft_chunks)
         updated_state["processing_phase"] = ProcessingPhase.SEARCH
+        self.logger.info(
+            "Ingestion completed",
+            extra={"request_id": updated_state.get("request_id"), "total_chunks": len(draft_chunks)},
+        )
         return self._persist_state(updated_state)
 
     async def _retrieve_references(self, state: AuditState) -> AuditState:
@@ -155,6 +162,16 @@ class AuditWorkflow:
         top_n_retrieval = getattr(self.settings.kb_api, "top_n_retrieval", self.settings.kb_api.top_k_retrieval)
         top_n_reranking = getattr(self.settings.kb_api, "top_n_reranking", self.settings.kb_api.top_k_retrieval)
 
+        self.logger.info(
+            "Retrieval phase started",
+            extra={
+                "request_id": updated_state.get("request_id"),
+                "folder_path": folder_path or "all",
+                "top_n_retrieval": top_n_retrieval,
+                "top_n_reranking": top_n_reranking,
+            },
+        )
+
         for draft_chunk in updated_state.get("draft_chunks", []):
             await asyncio.sleep(self.settings.processing.search_delay)
             try:
@@ -166,6 +183,10 @@ class AuditWorkflow:
                 )
             except Exception:
                 results = []
+                self.logger.exception(
+                    "Retrieval failed for chunk",
+                    extra={"request_id": updated_state.get("request_id"), "chunk_id": draft_chunk.id},
+                )
             ref_ids_for_chunk: List[str] = []
             for idx, item in enumerate(results):
                 ref_id = item.get("id") or f"ref_{draft_chunk.id}_{idx}"
@@ -187,6 +208,14 @@ class AuditWorkflow:
                 chunk_primary_sources[draft_chunk.id] = primary_file
             chunk_references[draft_chunk.id] = ref_ids_for_chunk[:top_n_reranking]
 
+        self.logger.info(
+            "Retrieval completed",
+            extra={
+                "request_id": updated_state.get("request_id"),
+                "total_references": len(knowledge_references),
+            },
+        )
+
         updated_state["knowledge_references"] = knowledge_references
         updated_state["chunk_references"] = chunk_references
         updated_state["chunk_primary_sources"] = chunk_primary_sources
@@ -201,6 +230,10 @@ class AuditWorkflow:
         chunk_references = updated_state.get("chunk_references", {})
 
         start_time = time.time()
+        self.logger.info(
+            "Comparison phase started",
+            extra={"request_id": updated_state.get("request_id"), "total_chunks": len(updated_state.get("draft_chunks", []))},
+        )
         for draft_chunk in updated_state.get("draft_chunks", []):
             reference_ids = chunk_references.get(draft_chunk.id, [])
             references_for_chunk = [references_map[ref_id] for ref_id in reference_ids if ref_id in references_map]
@@ -222,6 +255,10 @@ class AuditWorkflow:
                 )
             except Exception:
                 llm_results = []
+                self.logger.exception(
+                    "LLM compare failed",
+                    extra={"request_id": updated_state.get("request_id"), "chunk_id": draft_chunk.id},
+                )
 
             if not llm_results:
                 findings.append(
@@ -249,6 +286,14 @@ class AuditWorkflow:
                     )
             updated_state["processed_chunks"] = updated_state.get("processed_chunks", 0) + 1
             self._persist_state(updated_state)
+
+        self.logger.info(
+            "Comparison phase completed",
+            extra={
+                "request_id": updated_state.get("request_id"),
+                "processed_chunks": updated_state.get("processed_chunks", 0),
+            },
+        )
 
         elapsed_ms = int((time.time() - start_time) * 1000)
         updated_state["findings"] = findings

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import List, Optional
 
 from openai import AsyncOpenAI
@@ -15,6 +16,8 @@ class LLMClient:
         self.settings = settings
         self.client = AsyncOpenAI(api_key=settings.llm_api.api_key, base_url=settings.llm_api.base_url)
         self.system_prompt = SYSTEM_PROMPT
+        self.logger = logging.getLogger(__name__)
+        self.verbose_io = bool(getattr(settings, "logging", None) and settings.logging.log_external_io)
 
     def _safe_json_loads(self, content: str) -> List[dict]:
         try:
@@ -43,6 +46,16 @@ class LLMClient:
                 ),
             },
         ]
+        self.logger.info(
+            "LLM compare request",
+            extra={
+                "model": self.settings.llm_api.model,
+                "temperature": self.settings.llm_api.temperature,
+                "stream": stream,
+            },
+        )
+        if self.verbose_io:
+            self.logger.info("LLM compare payload", extra={"messages": messages})
         response = await self.client.chat.completions.create(
             model=self.settings.llm_api.model,
             messages=messages,
@@ -57,4 +70,6 @@ class LLMClient:
             content = "".join(collected) or "[]"
         else:
             content = response.choices[0].message.content or "[]"
+        if self.verbose_io:
+            self.logger.info("LLM compare response", extra={"raw": content})
         return self._safe_json_loads(content)

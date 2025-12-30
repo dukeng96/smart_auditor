@@ -36,11 +36,17 @@ class ProcessingSettings(BaseModel):
     search_delay: int = 5
 
 
+class LoggingSettings(BaseModel):
+    level: str = Field(default="INFO")
+    log_external_io: bool = Field(default=False)
+
+
 class AppSettings(BaseSettings):
     server: ServerSettings
     kb_api: KBSettings
     llm_api: LLMSettings
     processing: ProcessingSettings
+    logging: LoggingSettings = Field(default_factory=LoggingSettings)
 
     model_config = SettingsConfigDict(env_prefix="SMARTAUDITOR_", env_nested_delimiter="__", extra="ignore")
 
@@ -65,6 +71,7 @@ __all__ = [
     "KBSettings",
     "LLMSettings",
     "ProcessingSettings",
+    "LoggingSettings",
     "AppSettings",
     "get_settings",
 ]

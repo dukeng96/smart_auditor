@@ -15,6 +15,7 @@ FastAPI backend implementing the SmartDoc Auditor workflow with LangGraph orches
 3. Upload a document and start the audit via `POST /api/v1/auditor/upload`.
 
 Configuration defaults live in `config.yaml` and can be overridden with environment variables using the `SMARTAUDITOR_` prefix (e.g., `SMARTAUDITOR_LLM_API__API_KEY`).
+Logging controls live under the `logging` section (level + `log_external_io` to print KB/LLM request & response bodies).
 
 ## API reference & sample requests
 

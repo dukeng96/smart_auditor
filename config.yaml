@@ -20,3 +20,7 @@ processing:
   chunk_overlap: 200
   ocr_delay: 5
   search_delay: 5
+
+logging:
+  level: "INFO"
+  log_external_io: false
