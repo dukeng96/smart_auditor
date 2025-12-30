@@ -85,7 +85,12 @@ class AuditWorkflow:
             "processed_chunks": 0,
         }
         self.state_store[request_id] = initial_state
-        asyncio.create_task(self.workflow.ainvoke(initial_state, thread_id=request_id))
+        asyncio.create_task(
+            self.workflow.ainvoke(
+                initial_state,
+                config={"configurable": {"thread_id": request_id}},
+            )
+        )
         return request_id
 
     def _persist_state(self, state: AuditState) -> AuditState:
