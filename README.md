@@ -17,6 +17,28 @@ FastAPI backend implementing the SmartDoc Auditor workflow with LangGraph orches
 Configuration defaults live in `config.yaml` and can be overridden with environment variables using the `SMARTAUDITOR_` prefix (e.g., `SMARTAUDITOR_LLM_API__API_KEY`).
 Logging controls live under the `logging` section (level + `log_external_io` to print KB/LLM request & response bodies).
 
+## Container build & deployment
+
+### Build a local image
+```bash
+docker build -t smart-auditor:latest .
+```
+
+### Run with Docker
+```bash
+docker run --rm -p 8000:8000 \
+  -e SMARTAUDITOR_LLM_API__API_KEY="$SMARTAUDITOR_LLM_API__API_KEY" \
+  -v $(pwd)/config.yaml:/app/config.yaml:ro \
+  smart-auditor:latest
+```
+
+### Run with Docker Compose
+```bash
+docker compose up --build
+```
+
+The compose file exposes port `8000`, mounts the local `config.yaml` for configuration, and forwards the optional LLM API key from your environment. Adjust or append `SMARTAUDITOR_*` environment variables in `docker-compose.yml` as needed (e.g., server port or KB endpoints).
+
 ## API reference & sample requests
 
 ### Upload & trigger processing
