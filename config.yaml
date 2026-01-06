@@ -1,0 +1,26 @@
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+kb_api:
+  base_url: "http://10.159.19.59:31377"
+  bot_id: "7a11aef0-e183-11f0-8626-91b8ac5d8525"
+  top_k_retrieval: 5
+  top_n_retrieval: 100
+  top_n_reranking: 2
+
+llm_api:
+  base_url: "http://10.165.24.200:32110/query"
+  api_key: ""
+  model: "llm-small-v4"
+  temperature: 0.1
+
+processing:
+  chunk_size: 1000
+  chunk_overlap: 200
+  ocr_delay: 5
+  search_delay: 5
+
+logging:
+  level: "INFO"
+  log_external_io: false
