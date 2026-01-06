@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import StreamingResponse
 
 from app.models.schemas import (
@@ -25,10 +25,12 @@ def get_workflow(request: Request) -> AuditWorkflow:
 
 @router.post("/upload")
 async def upload_and_process(
-    kb_folder_id: str,
-    file: UploadFile = File(...),
+    kb_folder_id: str = Form(..., description="KB folder path to scope retrieval"),
+    file: UploadFile | None = File(None),
     workflow: AuditWorkflow = Depends(get_workflow),
 ):
+    if file is None:
+        raise HTTPException(status_code=400, detail="Missing file in upload request")
     uploads_dir = Path("uploads")
     uploads_dir.mkdir(parents=True, exist_ok=True)
     saved_path = uploads_dir / file.filename
