@@ -10,8 +10,8 @@ kb_api:
   top_n_reranking: 2
 
 llm_api:
-  base_url: "https://assistant-stream.vnpt.vn/v1/"
-  api_key: "xxx"
+  base_url: "http://10.165.24.200:32110/query"
+  api_key: ""
   model: "llm-small-v4"
   temperature: 0.1
 

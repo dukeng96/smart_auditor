@@ -17,6 +17,21 @@ FastAPI backend implementing the SmartDoc Auditor workflow with LangGraph orches
 Configuration defaults live in `config.yaml` and can be overridden with environment variables using the `SMARTAUDITOR_` prefix (e.g., `SMARTAUDITOR_LLM_API__API_KEY`).
 Logging controls live under the `logging` section (level + `log_external_io` to print KB/LLM request & response bodies).
 
+### LLM API
+- The service now calls a simple HTTP endpoint defined in `llm_api.base_url` (default: `http://10.165.24.200:32110/query`).
+- Request body sent to the LLM:
+  ```json
+  { "query": "<system prompt + formatted draft/reference prompt>" }
+  ```
+- Expected response shape:
+  ```json
+  {
+    "status": "success",
+    "code": 200,
+    "response": "[...]" // JSON string array parsed into findings
+  }
+  ```
+
 ## Container build & deployment
 
 ### Build a local image

@@ -3,7 +3,6 @@ uvicorn
 pdfplumber
 langchain-text-splitters
 langgraph
-openai
 httpx
 markdownify
 pydantic-settings

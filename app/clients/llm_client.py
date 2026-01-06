@@ -4,7 +4,7 @@ import json
 import logging
 from typing import List, Optional
 
-from openai import AsyncOpenAI
+import httpx
 
 from settings import AppSettings
 
@@ -14,7 +14,7 @@ SYSTEM_PROMPT = """Bạn là chuyên gia phân tích mâu thuẫn (CONFLICT), tr
 class LLMClient:
     def __init__(self, settings: AppSettings):
         self.settings = settings
-        self.client = AsyncOpenAI(api_key=settings.llm_api.api_key, base_url=settings.llm_api.base_url)
+        self.api_url = settings.llm_api.base_url.rstrip("/")
         self.system_prompt = SYSTEM_PROMPT
         self.logger = logging.getLogger(__name__)
         self.verbose_io = bool(getattr(settings, "logging", None) and settings.logging.log_external_io)
@@ -36,40 +36,33 @@ class LLMClient:
         system_prompt: Optional[str] = None,
         stream: bool = False,
     ) -> List[dict]:
-        messages = [
-            {"role": "system", "content": system_prompt or self.system_prompt},
-            {
-                "role": "user",
-                "content": prompt_template.format(
-                    draft_text=draft_text,
-                    reference_list_formatted=reference_list_formatted,
-                ),
-            },
-        ]
+        query_text = (system_prompt or self.system_prompt) + "\n\n" + prompt_template.format(
+            draft_text=draft_text,
+            reference_list_formatted=reference_list_formatted,
+        )
+
+        payload = {"query": query_text}
         self.logger.info(
             "LLM compare request",
             extra={
-                "model": self.settings.llm_api.model,
-                "temperature": self.settings.llm_api.temperature,
+                "endpoint": self.api_url,
                 "stream": stream,
             },
         )
         if self.verbose_io:
-            self.logger.info("LLM compare payload", extra={"messages": messages})
-        response = await self.client.chat.completions.create(
-            model=self.settings.llm_api.model,
-            messages=messages,
-            temperature=self.settings.llm_api.temperature,
-            stream=stream,
-        )
-        if stream:
-            collected: List[str] = []
-            async for chunk in response:  # type: ignore[operator]
-                delta = chunk.choices[0].delta.content or ""
-                collected.append(delta)
-            content = "".join(collected) or "[]"
-        else:
-            content = response.choices[0].message.content or "[]"
+            self.logger.info("LLM compare payload", extra={"payload": payload})
+
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                response = await client.post(self.api_url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except Exception:
+            self.logger.exception("LLM compare call failed")
+            raise
+
+        raw_content = data.get("response", "") if isinstance(data, dict) else ""
         if self.verbose_io:
-            self.logger.info("LLM compare response", extra={"raw": content})
-        return self._safe_json_loads(content)
+            self.logger.info("LLM compare response", extra={"raw": raw_content, "meta": data})
+
+        return self._safe_json_loads(raw_content)
