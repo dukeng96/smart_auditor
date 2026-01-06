@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pdfplumber
+langchain-text-splitters
+langgraph
+httpx
+markdownify
+pydantic-settings
+PyYAML
