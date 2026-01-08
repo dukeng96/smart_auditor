@@ -43,12 +43,11 @@ COMPARE_PROMPT = (
     "2. CONFLICT: Mâu thuẫn, trái ngược quy định.\n"
     "3. UPDATE: Dự thảo thay đổi (ngày, tiền, %...) so với tham chiếu.\n"
     "4. IRRELEVANT: Không liên quan.\n\n"
+    "Nếu nhiều đoạn tham chiếu nói cùng một ý, chỉ chọn 1 đoạn phù hợp nhất để gán type, các đoạn còn lại trả về IRRELEVANT.\n\n"
     "HÃY TRẢ VỀ DUY NHẤT MỘT MẢNG JSON GỒM N PHẦN TỬ (Tương ứng với số đoạn tham chiếu):\n"
     "- Nếu type là DUPLICATE, CONFLICT hoặc UPDATE:\n  {{ \"ref_id\": \"ID\", \"type\": \"...\", \"summary\": \"< 20 từ\", \"risk_score\": 0.0-1.0 }}\n"
     "- Nếu type là IRRELEVANT:\n  {{ \"ref_id\": \"ID\", \"type\": \"IRRELEVANT\" }} (Bỏ qua summary và risk_score)"
 )
-
-
 class AuditWorkflow:
     def __init__(self, settings: AppSettings):
         self.settings = settings
@@ -441,7 +440,7 @@ class AuditWorkflow:
             exec_summary=(
                 "AI đã đối chiếu "
                 f"{len(state.get('draft_chunks', []))} đoạn trong dự thảo với "
-                f"{len(state.get('knowledge_references', {}))} văn bản tham chiếu. "
+                f"{len(state.get('knowledge_references', {}))} đoạn văn bản tham chiếu. "
                 f"Phát hiện {stats.get('conflict', 0)} mâu thuẫn, {stats.get('update', 0)} cập nhật, "
                 f"{stats.get('duplicate', 0)} trùng khớp"
             ),
