@@ -16,6 +16,8 @@ class AuditState(TypedDict, total=False):
     chunk_primary_sources: Dict[str, str]
     current_compare_target: str
     findings: List[Finding]
+    ocr_total_pages: int
+    ocr_processed_pages: int
     search_processed: int
     total_chunks: int
     processed_chunks: int

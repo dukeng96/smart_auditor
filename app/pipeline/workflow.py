@@ -17,6 +17,7 @@ from markdownify import markdownify as md
 
 from app.clients.kb_client import KnowledgeBaseClient
 from app.clients.llm_client import LLMClient
+from app.clients.ocr_client import OcrClient
 from app.models.schemas import (
     AnalysisResultResponse,
     AnalysisType,
@@ -54,6 +55,7 @@ class AuditWorkflow:
         self.checkpointer = MemorySaver()
         self.kb_client = KnowledgeBaseClient(settings)
         self.llm_client = LLMClient(settings)
+        self.ocr_client = OcrClient(settings)
         self.folder_cache: Dict[str, str] = {}
         self.state_store: Dict[str, AuditState] = {}
         self.workflow = self._build_workflow()
@@ -87,6 +89,8 @@ class AuditWorkflow:
             "chunk_references": {},
             "chunk_primary_sources": {},
             "findings": [],
+            "ocr_total_pages": 0,
+            "ocr_processed_pages": 0,
             "search_processed": 0,
             "total_chunks": 0,
             "processed_chunks": 0,
@@ -113,6 +117,15 @@ class AuditWorkflow:
         compact = re.sub(r"-+", "-", sanitized)
         return compact or f"ref-{uuid4().hex[:8]}"
 
+    @staticmethod
+    def _extract_pdf_text(file_path: Path) -> str:
+        text_content: List[str] = []
+        with pdfplumber.open(str(file_path)) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text() or ""
+                text_content.append(page_text)
+        return "\n".join(text_content)
+
     async def _resolve_kb_folder_path(self, kb_folder_id: str) -> str | None:
         if not kb_folder_id:
             return None
@@ -133,15 +146,40 @@ class AuditWorkflow:
     async def _ingest_and_chunk(self, state: AuditState) -> AuditState:
         updated_state = dict(state)
         updated_state["processing_phase"] = ProcessingPhase.OCR
-        await asyncio.sleep(self.settings.processing.ocr_delay)
+        updated_state["ocr_total_pages"] = 0
+        updated_state["ocr_processed_pages"] = 0
+        self._persist_state(updated_state)
+        if not self.settings.processing.enable_ocr:
+            await asyncio.sleep(self.settings.processing.ocr_delay)
 
         file_path = Path(updated_state["file_path"])
-        text_content: List[str] = []
-        with pdfplumber.open(str(file_path)) as pdf:
-            for page in pdf.pages:
-                page_text = page.extract_text() or ""
-                text_content.append(page_text)
-        full_text = "\n".join(text_content)
+        full_text = ""
+
+        async def _update_ocr_progress(processed: int, total: int) -> None:
+            updated_state["ocr_processed_pages"] = processed
+            updated_state["ocr_total_pages"] = total
+            self._persist_state(updated_state)
+
+        if self.settings.processing.enable_ocr:
+            try:
+                ocr_html = await self.ocr_client.run_ocr(file_path, on_progress=_update_ocr_progress)
+                if ocr_html:
+                    full_text = md(ocr_html)
+            except Exception:
+                self.logger.exception(
+                    "OCR failed, falling back to PDF extraction",
+                    extra={"request_id": updated_state.get("request_id")},
+                )
+
+        if self.settings.processing.enable_ocr and updated_state.get("ocr_total_pages"):
+            updated_state["ocr_processed_pages"] = updated_state["ocr_total_pages"]
+            self._persist_state(updated_state)
+
+        if not full_text:
+            full_text = self._extract_pdf_text(file_path)
+            updated_state["ocr_processed_pages"] = 1
+            updated_state["ocr_total_pages"] = 1
+            self._persist_state(updated_state)
 
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.settings.processing.chunk_size,

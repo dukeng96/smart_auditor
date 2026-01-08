@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import StreamingResponse
 
 from app.models.schemas import (
@@ -25,7 +25,7 @@ def get_workflow(request: Request) -> AuditWorkflow:
 
 @router.post("/upload")
 async def upload_and_process(
-    kb_folder_id: str,
+    kb_folder_id: str = Form(""),
     file: UploadFile = File(...),
     workflow: AuditWorkflow = Depends(get_workflow),
 ):
@@ -58,8 +58,14 @@ async def _progress_stream(workflow: AuditWorkflow, task_id: str) -> AsyncGenera
             progress = 0
             message = "Bắt đầu phân tích"
         elif phase == ProcessingPhase.OCR:
-            progress = 5
-            message = "Đang trích xuất nội dung văn bản..."
+            ocr_total = state.get("ocr_total_pages", 0)
+            ocr_processed = state.get("ocr_processed_pages", 0)
+            if ocr_total:
+                progress = int((min(ocr_processed, ocr_total) / ocr_total) * 10)
+                message = f"OCR processing {ocr_processed}/{ocr_total} pages..."
+            else:
+                progress = 0
+                message = "OCR processing..."
         elif phase == ProcessingPhase.SEARCH:
             progress = 10 + int((completed_operations / total_operations) * 89)
             message = "Đang tìm kiếm văn bản liên quan..."
@@ -99,6 +105,17 @@ async def get_progress(request_id: str, workflow: AuditWorkflow = Depends(get_wo
     state = workflow.get_state(request_id)
     if not state:
         raise HTTPException(status_code=404, detail="Request not found")
+    phase = state.get("processing_phase")
+    if phase == ProcessingPhase.OCR:
+        total_items = state.get("ocr_total_pages", 0)
+        reviewed_items = state.get("ocr_processed_pages", 0)
+        percentage = int((min(reviewed_items, total_items) / total_items) * 100) if total_items else 0
+        return ProgressResponse(
+            phase=phase,
+            total_items=total_items,
+            reviewed_items=reviewed_items,
+            percentage=percentage,
+        )
     total_chunks = state.get("total_chunks", 0)
     search_processed = state.get("search_processed", 0)
     compare_processed = state.get("processed_chunks", 0)
@@ -106,7 +123,7 @@ async def get_progress(request_id: str, workflow: AuditWorkflow = Depends(get_wo
     completed_operations = min(search_processed + compare_processed, total_operations)
     percentage = int((completed_operations / total_operations) * 100)
     return ProgressResponse(
-        phase=state.get("processing_phase"),
+        phase=phase,
         total_items=total_chunks,
         reviewed_items=compare_processed,
         percentage=percentage,

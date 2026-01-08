@@ -34,6 +34,20 @@ class ProcessingSettings(BaseModel):
     chunk_overlap: int = 200
     ocr_delay: int = 5
     search_delay: int = 5
+    enable_ocr: bool = Field(default=False)
+
+
+class OCRSettings(BaseModel):
+    add_file_url: str
+    session_id_url: str
+    result_url: str
+    token_id: str = Field(default="")
+    token_key: str = Field(default="")
+    authorization: str = Field(default="")
+    token: str = Field(default="")
+    client_session: str = Field(default="")
+    timeout_seconds: int = Field(default=2400)
+    poll_interval_seconds: int = Field(default=5)
 
 
 class LoggingSettings(BaseModel):
@@ -46,6 +60,7 @@ class AppSettings(BaseSettings):
     kb_api: KBSettings
     llm_api: LLMSettings
     processing: ProcessingSettings
+    ocr_api: OCRSettings
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
 
     model_config = SettingsConfigDict(env_prefix="SMARTAUDITOR_", env_nested_delimiter="__", extra="ignore")
@@ -71,6 +86,7 @@ __all__ = [
     "KBSettings",
     "LLMSettings",
     "ProcessingSettings",
+    "OCRSettings",
     "LoggingSettings",
     "AppSettings",
     "get_settings",
