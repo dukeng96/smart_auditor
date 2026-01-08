@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 from typing import AsyncGenerator
 
@@ -40,6 +41,9 @@ async def upload_and_process(
 
 
 async def _progress_stream(workflow: AuditWorkflow, task_id: str) -> AsyncGenerator[bytes, None]:
+    ocr_weight = 25
+    search_weight = 5
+    compare_weight = 70
     while True:
         state = workflow.get_state(task_id)
         if not state:
@@ -49,8 +53,6 @@ async def _progress_stream(workflow: AuditWorkflow, task_id: str) -> AsyncGenera
         total_chunks = state.get("total_chunks", 0)
         search_processed = state.get("search_processed", 0)
         compare_processed = state.get("processed_chunks", 0)
-        total_operations = max((total_chunks or 0) * 2, 1)
-        completed_operations = min(search_processed + compare_processed, total_operations)
         phase = state.get("processing_phase")
         phase_value = phase.value if hasattr(phase, "value") else phase
 
@@ -61,16 +63,40 @@ async def _progress_stream(workflow: AuditWorkflow, task_id: str) -> AsyncGenera
             ocr_total = state.get("ocr_total_pages", 0)
             ocr_processed = state.get("ocr_processed_pages", 0)
             if ocr_total:
-                progress = int((min(ocr_processed, ocr_total) / ocr_total) * 10)
+                progress = int((min(ocr_processed, ocr_total) / ocr_total) * ocr_weight)
                 message = f"OCR processing {ocr_processed}/{ocr_total} pages..."
             else:
-                progress = 0
-                message = "OCR processing..."
+                ocr_started_at = state.get("ocr_started_at")
+                if ocr_started_at:
+                    elapsed = max(0.0, time.time() - ocr_started_at)
+                    progress = int(min(elapsed / 5.0, 1.0) * ocr_weight)
+                else:
+                    progress = 0
+                message = "Đang OCR văn bản..."
         elif phase == ProcessingPhase.SEARCH:
-            progress = 10 + int((completed_operations / total_operations) * 89)
+            if total_chunks:
+                search_progress = int((min(search_processed, total_chunks) / total_chunks) * search_weight)
+            else:
+                search_progress = 0
+            progress = ocr_weight + search_progress
             message = "Đang tìm kiếm văn bản liên quan..."
         elif phase == ProcessingPhase.COMPARE:
-            progress = 10 + int((completed_operations / total_operations) * 89)
+            base = ocr_weight + search_weight
+            if total_chunks:
+                chunk_span = compare_weight / total_chunks
+                completed = min(compare_processed, total_chunks)
+                progress = base + int(completed * chunk_span)
+                if completed < total_chunks:
+                    last_tick = state.get("compare_last_progress_at") or state.get("compare_started_at")
+                    if last_tick:
+                        elapsed = max(0.0, time.time() - last_tick)
+                        creep = min(chunk_span * 0.7, elapsed * 0.5)
+                        progress = min(
+                            progress + int(creep),
+                            base + int((completed + 1) * chunk_span) - 1,
+                        )
+            else:
+                progress = base
             target_file = state.get("current_compare_target") or "các tài liệu tham chiếu"
             message = f"Đang đối chiếu với: {target_file}"
         elif phase == ProcessingPhase.DONE:

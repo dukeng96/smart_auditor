@@ -18,7 +18,11 @@ class AuditState(TypedDict, total=False):
     findings: List[Finding]
     ocr_total_pages: int
     ocr_processed_pages: int
+    ocr_started_at: float
     search_processed: int
+    search_started_at: float
     total_chunks: int
     processed_chunks: int
+    compare_started_at: float
+    compare_last_progress_at: float
     processing_time_ms: Optional[int]

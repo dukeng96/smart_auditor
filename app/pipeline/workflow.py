@@ -147,12 +147,21 @@ class AuditWorkflow:
         updated_state["processing_phase"] = ProcessingPhase.OCR
         updated_state["ocr_total_pages"] = 0
         updated_state["ocr_processed_pages"] = 0
+        updated_state["ocr_started_at"] = time.time()
         self._persist_state(updated_state)
         if not self.settings.processing.enable_ocr:
             await asyncio.sleep(self.settings.processing.ocr_delay)
 
         file_path = Path(updated_state["file_path"])
         full_text = ""
+
+        if self.settings.processing.enable_ocr:
+            try:
+                with pdfplumber.open(str(file_path)) as pdf:
+                    updated_state["ocr_total_pages"] = len(pdf.pages)
+            except Exception:
+                updated_state["ocr_total_pages"] = 0
+            self._persist_state(updated_state)
 
         async def _update_ocr_progress(processed: int, total: int) -> None:
             updated_state["ocr_processed_pages"] = processed
@@ -194,6 +203,7 @@ class AuditWorkflow:
         updated_state["total_chunks"] = len(draft_chunks)
         updated_state["search_processed"] = 0
         updated_state["processing_phase"] = ProcessingPhase.SEARCH
+        updated_state["search_started_at"] = time.time()
         self.logger.info(
             "Ingestion completed",
             extra={"request_id": updated_state.get("request_id"), "total_chunks": len(draft_chunks)},
@@ -277,6 +287,8 @@ class AuditWorkflow:
         updated_state["chunk_references"] = chunk_references
         updated_state["chunk_primary_sources"] = chunk_primary_sources
         updated_state["processing_phase"] = ProcessingPhase.COMPARE
+        updated_state["compare_started_at"] = time.time()
+        updated_state["compare_last_progress_at"] = updated_state["compare_started_at"]
         return self._persist_state(updated_state)
 
     async def _compare_chunks(self, state: AuditState) -> AuditState:
@@ -344,6 +356,7 @@ class AuditWorkflow:
                         )
                     )
             updated_state["processed_chunks"] = updated_state.get("processed_chunks", 0) + 1
+            updated_state["compare_last_progress_at"] = time.time()
             self._persist_state(updated_state)
 
         self.logger.info(
