@@ -17,7 +17,7 @@ llm_api:
 
 processing:
   chunk_size: 1000
-  chunk_overlap: 200
+  chunk_overlap: 50
   ocr_delay: 5
   search_delay: 5
   enable_ocr: true
@@ -26,11 +26,11 @@ ocr_api:
   add_file_url: "https://sandbox-idg.vnpt.vn/file-service/v1/addFile"
   session_id_url: "http://10.159.19.112:31436/integration/ocr/gen_ai"
   result_url: "http://10.159.19.112:31436/integration/ocr/gen_ai/result"
-  token_id: "e421b0bf-6a70-4024-e053-4604a80a3d0f"
-  token_key: "MFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBANYkBU/DDluGcOzFfSkDXjGmBX6Ty5fGZuYOEac7fWLgKos8y4LKt8I/7YuhUfij8J7DS6MetP8b9XUzbTy9lXkCAwEAAQ=="
-  authorization: "Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMjI0OGNlMy0wNzE5LTExZWQtYTE5My02YjEwZTgyMjI0M2EiLCJhdWQiOlsicmVzdHNlcnZpY2UiXSwidXNlcl9uYW1lIjoidGh1eTEyM0B5b3BtYWlsLmNvbSIsInNjb3BlIjpbInJlYWQiXSwiaXNzIjoiaHR0cHM6Ly9sb2NhbGhvc3QiLCJuYW1lIjoidGh1eTEyM0B5b3BtYWlsLmNvbSIsInV1aWRfYWNjb3VudCI6IjAyMjQ4Y2UzLTA3MTktMTFlZC1hMTkzLTZiMTBlODIyMjQzYSIsImF1dGhvcml0aWVzIjpbIlVTRVIiXSwianRpIjoiYzg3MzBkYTAtOTRmMi00NDVlLWJjODItZGI1NGIwMzAxNzJiIiwiY2xpZW50X2lkIjoiYWRtaW5hcHAifQ.4mB5_ks0kRI8KRQVT7nT8gw4ck6efVaKNh_9JHVsln7emHSKEnOOiJjPaI4gIRpztpauzrJpmNQS7V7WzDsKxVqXn87DNQBST3dh4Ip8ZXlBdSnJQtZ2Q7XQn0JHoJAM1M1QG7TqaR2fneImsmdGwplewt0K3IKb9c7nC7E_0ikbyyIIYBg4KiaCuBipLZIodsz5RaP149J9HmDUcMcD9Jqw9wTq-zVAqCu7_hmUf8ftLFCiooKYgAdUwpmcriJDxblM-DSfDWIC0l9aSfrGl6DjpgzDPd8eqZ5fE-EsQGVD2hV_gZGlT0MyS1EetAeGD3P8L55ljr1mZOxnjfa5AQ"
-  token: "8928skjhfa89298jahga1771vbvb"
-  client_session: "00-14-22-01-23-45-1548211589291"
+  token_id:
+  token_key:
+  authorization:
+  token:
+  client_session:
   timeout_seconds: 2400
   poll_interval_seconds: 5
 
