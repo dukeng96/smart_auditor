@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from pathlib import Path
 from typing import AsyncGenerator
@@ -114,7 +115,7 @@ async def _progress_stream(workflow: AuditWorkflow, task_id: str) -> AsyncGenera
         if phase == ProcessingPhase.DONE:
             payload["result_id"] = task_id
         yield b"event: message\n"
-        yield f"data: {payload}\n\n".encode("utf-8")
+        yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8")
         if phase == ProcessingPhase.DONE:
             break
         await asyncio.sleep(1)
